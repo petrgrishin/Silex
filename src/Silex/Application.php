@@ -11,6 +11,7 @@
 
 namespace Silex;
 
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpKernel\HttpKernel;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
@@ -88,6 +89,9 @@ class Application extends \Pimple implements HttpKernelInterface, TerminableInte
 
         $this['dispatcher_class'] = 'Symfony\\Component\\EventDispatcher\\EventDispatcher';
         $this['dispatcher'] = $this->share(function () use ($app) {
+            /**
+             * @var EventDispatcherInterface $dispatcher
+             */
             $dispatcher = new $app['dispatcher_class']();
 
             $urlMatcher = new LazyUrlMatcher(function () use ($app) {
@@ -288,7 +292,7 @@ class Application extends \Pimple implements HttpKernelInterface, TerminableInte
             return;
         }
 
-        $this['dispatcher'] = $this->share($this->extend('dispatcher', function ($dispatcher, $app) use ($callback, $priority, $eventName) {
+        $this['dispatcher'] = $this->share($this->extend('dispatcher', function (EventDispatcherInterface $dispatcher, $app) use ($callback, $priority, $eventName) {
             $dispatcher->addListener($eventName, $app['callback_resolver']->resolveCallback($callback), $priority);
 
             return $dispatcher;
@@ -494,11 +498,15 @@ class Application extends \Pimple implements HttpKernelInterface, TerminableInte
     public function mount($prefix, $controllers)
     {
         if ($controllers instanceof ControllerProviderInterface) {
-            $controllers = $controllers->connect($this);
-        }
+            $connectedControllers = $controllers->connect($this);
 
-        if (!$controllers instanceof ControllerCollection) {
-            throw new \LogicException('The "mount" method takes either a ControllerCollection or a ControllerProviderInterface instance.');
+            if (!$connectedControllers instanceof ControllerCollection) {
+                throw new \LogicException(sprintf('The method "%s::connect" must return a "ControllerCollection" instance. Got: "%s"', get_class($controllers), is_object($connectedControllers) ? get_class($connectedControllers) : gettype($connectedControllers)));
+            }
+
+            $controllers = $connectedControllers;
+        } elseif (!$controllers instanceof ControllerCollection) {
+            throw new \LogicException('The "mount" method takes either a "ControllerCollection" or a "ControllerProviderInterface" instance.');
         }
 
         $this['controllers']->mount($prefix, $controllers);
